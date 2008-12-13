@@ -4,8 +4,12 @@ include Net
 class Blamewidth
   attr_reader :traffic
   
-  USER = "root" #Enter username here
-  PASSWORD = "ADMIN$" #Enter password here
+  
+  def initialize(router_ip, username, password)
+    @router_ip = router_ip
+    @username = username
+    @password = password
+  end
   
   def traffic
     return @traffic if @traffic
@@ -34,9 +38,33 @@ class Blamewidth
   
   def session
     return @session if @session
-    s = Net::Telnet::new( "Host" => '192.168.0.1', "Timeout" => 5, "Prompt" => /#/ )
-    s.login(USER, PASSWORD)
+    s = Net::Telnet::new( "Host" => @router_ip, "Timeout" => 5, "Prompt" => /#/ )
+    s.login(@username, @password)
     @session = s
+  end
+
+  def reset
+    # zero-out the bandwidth count for all ips
+    session.cmd('iptables -Z traffic_out')
+    session.cmd('iptables -Z traffic_in')
+    puts "Reset traffic stats."
+  end
+  
+  def setup(ips)
+    # initial setup
+    setup_commands = %w(
+      iptables -N traffic_in
+      iptables -N traffic_out
+      iptables -I FORWARD 1 -j traffic_in
+      iptables -I FORWARD 2 -j traffic_out
+    )
+    setup_commands.each { |cmd| session.cmd(cmd) }
+    
+    # per-ip monitoring
+    ips.each do |ip|
+      session.cmd("iptables -A traffic_in -d #{ip}")
+      session.cmd("iptables -A traffic_out -s #{ip}")
+    end
   end
 
   private
@@ -61,15 +89,3 @@ class Blamewidth
   end
 
 end
-
-b = Blamewidth.new
-b.blame
-
-# blame!
-# all_traffic = retrieve_traffic
-# out_traffic = all_traffic.sort { |a, b| a[1][0] <=> b[1][0] }
-
-
-# zero the figures
-#iptables -Z traffic_out
-#iptables -Z traffic_in
